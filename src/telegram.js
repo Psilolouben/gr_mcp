@@ -6,27 +6,45 @@ const { getStoredGames } = require('./storage');
 
 let bot;
 
+const TELEGRAM_MAX = 4000; // leave headroom below Telegram's 4096 limit
+
+function formatList(emoji, label, items) {
+  if (items.length === 0) return '';
+  const header = `${emoji} *${items.length} ${label}:*`;
+  const body = items.map((g) => `  • ${g}`).join('\n');
+  return `${header}\n${body}`;
+}
+
 function formatResult(result) {
   const lines = [];
 
   if (result.added.length === 0 && result.removed.length === 0) {
     lines.push('✅ No changes — inventory is the same as last check.');
   } else {
-    if (result.added.length > 0) {
-      lines.push(`🟢 *${result.added.length} new game(s) added:*`);
-      result.added.forEach((g) => lines.push(`  • ${g}`));
-    }
-    if (result.removed.length > 0) {
-      lines.push('');
-      lines.push(`🔴 *${result.removed.length} game(s) removed:*`);
-      result.removed.forEach((g) => lines.push(`  • ${g}`));
-    }
+    const added = formatList('🟢', 'new game(s) added', result.added);
+    const removed = formatList('🔴', 'game(s) removed', result.removed);
+    if (added) lines.push(added);
+    if (removed) lines.push(removed);
   }
 
   lines.push('');
   lines.push(`📦 Total games on site: ${result.total}`);
 
-  return lines.join('\n');
+  const text = lines.join('\n');
+
+  if (text.length <= TELEGRAM_MAX) return text;
+
+  // Too long — send a summary instead of the full list
+  return [
+    result.added.length > 0 ? `🟢 *${result.added.length} game(s) added*` : '',
+    result.removed.length > 0 ? `🔴 *${result.removed.length} game(s) removed*` : '',
+    '',
+    `📦 Total games on site: ${result.total}`,
+    '',
+    '_List too long for Telegram — check Claude for the full diff._',
+  ]
+    .filter((l) => l !== null)
+    .join('\n');
 }
 
 /**

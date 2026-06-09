@@ -25,6 +25,17 @@ async function scrapeGames() {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (compatible; gr-scraper-mcp/1.0)');
 
+    // Block everything that doesn't affect product rendering
+    await page.setRequestInterception(true);
+    page.on('request', (req) => {
+      const type = req.resourceType();
+      if (['image', 'stylesheet', 'font', 'media', 'other'].includes(type)) {
+        req.abort();
+      } else {
+        req.continue();
+      }
+    });
+
     for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
       const url = `${BASE_URL}?fq=1&page=${pageNum}`;
       console.log(`Fetching page ${pageNum}…`);
