@@ -2,6 +2,7 @@
 
 const TelegramBot = require('node-telegram-bot-api');
 const { checkGameChanges } = require('./checker');
+const { getStoredGames } = require('./storage');
 
 let bot;
 
@@ -33,30 +34,35 @@ function formatResult(result) {
  */
 async function pushTelegramUpdate(result) {
   if (!bot || !process.env.TELEGRAM_CHAT_ID) return;
-  const text = formatResult(result);
-  await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, text, {
+  await bot.sendMessage(process.env.TELEGRAM_CHAT_ID, formatResult(result), {
     parse_mode: 'Markdown',
   });
 }
 
 /**
- * Start the Telegram bot (polling). Registers /check and /status commands.
+ * Handle an incoming Telegram update object (called from the webhook route).
  */
-function startTelegramBot() {
+async function handleUpdate(update) {
+  bot.processUpdate(update);
+}
+
+/**
+ * Register webhook with Telegram and wire up command handlers.
+ * Must be called after the Express server is listening so the URL is reachable.
+ */
+async function startTelegramBot(webhookBaseUrl) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) {
     console.log('TELEGRAM_BOT_TOKEN not set — Telegram bot disabled.');
     return;
   }
 
-  bot = new TelegramBot(token, {
-    polling: {
-      interval: 2000,   // check every 2s
-      autoStart: true,
-      params: { timeout: 10 }, // short-poll so Render doesn't kill the connection
-    },
-  });
-  console.log('Telegram bot started (polling).');
+  // No polling — we receive updates via webhook
+  bot = new TelegramBot(token, { polling: false });
+
+  const webhookUrl = `${webhookBaseUrl}/telegram/webhook`;
+  await bot.setWebHook(webhookUrl);
+  console.log(`Telegram webhook registered: ${webhookUrl}`);
 
   // /check — run a full scrape and reply
   bot.onText(/\/check/, async (msg) => {
@@ -75,7 +81,6 @@ function startTelegramBot() {
   bot.onText(/\/status/, async (msg) => {
     const chatId = msg.chat.id;
     try {
-      const { getStoredGames } = require('./storage');
       const stored = await getStoredGames();
       await bot.sendMessage(
         chatId,
@@ -87,9 +92,7 @@ function startTelegramBot() {
     }
   });
 
-  bot.on('polling_error', (err) => console.error('Telegram polling error:', err));
-
   return bot;
 }
 
-module.exports = { startTelegramBot, pushTelegramUpdate };
+module.exports = { startTelegramBot, pushTelegramUpdate, handleUpdate };
