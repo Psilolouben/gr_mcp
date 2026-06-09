@@ -10,6 +10,7 @@ async function scrapeGames() {
   const browser = await puppeteer.launch({
     executablePath: EXECUTABLE_PATH,
     headless: true,
+    protocolTimeout: 600_000, // 10 min — covers slow pages at the CDP level
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -28,14 +29,17 @@ async function scrapeGames() {
       const url = `${BASE_URL}?fq=1&page=${pageNum}`;
       console.log(`Fetching page ${pageNum}…`);
 
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 0 });
-      await page.waitForSelector('.name', { timeout: 0 });
+      // Mirror the Ruby script: wait for networkidle2, no timeout
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 0 });
 
       const names = await page.$$eval('.name', (els) =>
         els.map((el) => el.textContent.trim()).filter(Boolean)
       );
 
-      if (names.length === 0) break;
+      if (names.length === 0) {
+        console.log(`Page ${pageNum}: empty — done.`);
+        break;
+      }
 
       names.forEach((n) => games.add(n));
       console.log(`Page ${pageNum}: ${names.length} games`);
