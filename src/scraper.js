@@ -11,7 +11,9 @@ const BATCH_PAUSE_MS = 1000; // polite pause between batches
 async function fetchPage(browserPage, pageNum) {
   const url = `${BASE_URL}?fq=1&page=${pageNum}`;
   try {
-    await browserPage.goto(url, { waitUntil: 'networkidle2', timeout: 90_000 });
+    await browserPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    // Wait for the product list to render (JS-driven site)
+    await browserPage.waitForSelector('.name', { timeout: 20_000 });
     const names = await browserPage.$$eval('.name', (els) =>
       els.map((el) => el.textContent.trim()).filter(Boolean)
     );
