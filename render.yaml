@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: gr-scraper-mcp
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter          # upgrade if you need more RAM for Chromium
+    healthCheckPath: /health
+    envVars:
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false        # set manually in Render dashboard
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false        # optional: push notifications target
