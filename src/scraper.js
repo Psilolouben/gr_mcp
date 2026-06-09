@@ -25,6 +25,15 @@ async function scrapeGames() {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (compatible; gr-scraper-mcp/1.0)');
 
+    // Log all XHR/fetch URLs on the first page so we can identify the product API
+    page.on('response', async (res) => {
+      const url = res.url();
+      const type = res.request().resourceType();
+      if (['xhr', 'fetch'].includes(type)) {
+        console.log(`[API] ${res.status()} ${url}`);
+      }
+    });
+
     // Block everything that doesn't affect product rendering
     await page.setRequestInterception(true);
     page.on('request', (req) => {
