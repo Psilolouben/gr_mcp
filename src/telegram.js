@@ -49,7 +49,13 @@ function startTelegramBot() {
     return;
   }
 
-  bot = new TelegramBot(token, { polling: true });
+  bot = new TelegramBot(token, {
+    polling: {
+      interval: 2000,   // check every 2s
+      autoStart: true,
+      params: { timeout: 10 }, // short-poll so Render doesn't kill the connection
+    },
+  });
   console.log('Telegram bot started (polling).');
 
   // /check — run a full scrape and reply
