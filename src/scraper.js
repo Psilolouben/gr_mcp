@@ -28,7 +28,7 @@ async function scrapeGames() {
 
     for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
       const url = `${BASE_URL}?fq=1&page=${pageNum}`;
-      await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 });
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 90_000 });
 
       const namesOnPage = await page.$$eval('.name', (els) =>
         els.map((el) => el.textContent.trim()).filter(Boolean)

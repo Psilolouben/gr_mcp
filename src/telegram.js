@@ -92,6 +92,37 @@ async function startTelegramBot(webhookBaseUrl) {
     }
   });
 
+  // Natural language fallback — any plain message gets routed by keyword
+  bot.on('message', async (msg) => {
+    if (msg.text && msg.text.startsWith('/')) return; // already handled above
+
+    const text = (msg.text || '').toLowerCase();
+    const chatId = msg.chat.id;
+
+    if (/status|how many|count|stored/.test(text)) {
+      try {
+        const stored = await getStoredGames();
+        await bot.sendMessage(
+          chatId,
+          `📦 Currently tracking *${stored.length}* games in storage.`,
+          { parse_mode: 'Markdown' }
+        );
+      } catch (err) {
+        await bot.sendMessage(chatId, `❌ Error: ${err.message}`);
+      }
+    } else {
+      // Default: anything else triggers a check
+      await bot.sendMessage(chatId, '🔍 Scraping thegamerules.com… this takes ~1 min.');
+      try {
+        const result = await checkGameChanges();
+        await bot.sendMessage(chatId, formatResult(result), { parse_mode: 'Markdown' });
+      } catch (err) {
+        console.error('Telegram message error:', err);
+        await bot.sendMessage(chatId, `❌ Error: ${err.message}`);
+      }
+    }
+  });
+
   return bot;
 }
 
