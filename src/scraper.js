@@ -38,7 +38,8 @@ async function fetchPage(browser, pageNum) {
   const page = await openPage(browser);
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 0 });
-    await page.waitForSelector('.name', { timeout: 0 });
+    // 30s to find .name — if it times out the page doesn't exist, stop scraping
+    await page.waitForSelector('.name', { timeout: 30_000 });
     const names = await page.$$eval('.name', (els) =>
       els.map((el) => el.textContent.trim()).filter(Boolean)
     );
@@ -62,12 +63,23 @@ async function scrapeGames() {
           names = await fetchPage(browser, pageNum);
           break; // success
         } catch (err) {
+          const isTimeout = err.name === 'TimeoutError' || err.message.includes('waiting for selector');
+          const isCrash = err.name === 'TargetCloseError' || err.message.includes('Target closed');
+
+          if (isTimeout) {
+            // .name never appeared — page doesn't exist, we're done
+            console.log(`Page ${pageNum}: no products (timeout) — done.`);
+            names = [];
+            break;
+          }
+
           console.warn(`Page ${pageNum} attempt ${attempt} failed: ${err.message}`);
-          // If browser crashed, relaunch before retrying
-          if (err.name === 'TargetCloseError' || err.message.includes('Target closed')) {
+
+          if (isCrash) {
             await browser.close().catch(() => {});
             browser = await launchBrowser();
           }
+
           if (attempt === MAX_RETRIES) {
             console.error(`Page ${pageNum}: giving up after ${MAX_RETRIES} attempts.`);
             names = [];
