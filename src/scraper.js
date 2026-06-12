@@ -3,12 +3,24 @@
 const puppeteer = require('puppeteer-core');
 
 const EXECUTABLE_PATH = process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium';
-const BASE_URL = 'https://thegamerules.com/epitrapezia-paixnidia';
 const MAX_PAGES = 30;
 const MAX_RETRIES = 2;
 
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+// Sections to scrape — add more entries here to extend coverage
+const SECTIONS = [
+  {
+    name: 'Board Games',
+    buildUrl: (page) => `https://thegamerules.com/epitrapezia-paixnidia?fq=1&page=${page}`,
+  },
+  {
+    name: 'New Arrivals',
+    buildUrl: (page) =>
+      `https://thegamerules.com/index.php?route=product/search&search=&description=true&fq=1&page=${page}`,
+  },
+];
 
 async function launchBrowser() {
   return puppeteer.launch({
@@ -33,73 +45,81 @@ async function openPage(browser) {
   return page;
 }
 
-async function fetchPage(browser, pageNum) {
-  const url = `${BASE_URL}?fq=1&page=${pageNum}`;
+async function fetchPage(browser, url) {
   const page = await openPage(browser);
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 0 });
-    // 30s to find .name — if it times out the page doesn't exist, stop scraping
+    // 30s to find .name — timeout means page doesn't exist
     await page.waitForSelector('.name', { timeout: 30_000 });
-    const names = await page.$$eval('.name', (els) =>
+    return await page.$$eval('.name', (els) =>
       els.map((el) => el.textContent.trim()).filter(Boolean)
     );
-    return names;
   } finally {
     await page.close().catch(() => {});
   }
 }
 
-async function scrapeGames() {
+async function scrapeSection(browser, section) {
   const games = new Set();
+
+  for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+    const url = section.buildUrl(pageNum);
+    console.log(`[${section.name}] Fetching page ${pageNum}…`);
+
+    let names = null;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        names = await fetchPage(browser, url);
+        break;
+      } catch (err) {
+        const isTimeout = err.name === 'TimeoutError' || err.message.includes('waiting for selector');
+        const isCrash = err.name === 'TargetCloseError' || err.message.includes('Target closed');
+
+        if (isTimeout) {
+          console.log(`[${section.name}] Page ${pageNum}: no products — done.`);
+          names = [];
+          break;
+        }
+
+        console.warn(`[${section.name}] Page ${pageNum} attempt ${attempt} failed: ${err.message}`);
+
+        if (isCrash) {
+          await browser.close().catch(() => {});
+          browser = await launchBrowser();
+        }
+
+        if (attempt === MAX_RETRIES) {
+          console.error(`[${section.name}] Page ${pageNum}: giving up.`);
+          names = [];
+        }
+      }
+    }
+
+    if (names.length === 0) break;
+
+    names.forEach((n) => games.add(n));
+    console.log(`[${section.name}] Page ${pageNum}: ${names.length} games`);
+  }
+
+  return games;
+}
+
+async function scrapeGames() {
+  const all = new Set();
   let browser = await launchBrowser();
 
   try {
-    for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
-      console.log(`Fetching page ${pageNum}…`);
-
-      let names = null;
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          names = await fetchPage(browser, pageNum);
-          break; // success
-        } catch (err) {
-          const isTimeout = err.name === 'TimeoutError' || err.message.includes('waiting for selector');
-          const isCrash = err.name === 'TargetCloseError' || err.message.includes('Target closed');
-
-          if (isTimeout) {
-            // .name never appeared — page doesn't exist, we're done
-            console.log(`Page ${pageNum}: no products (timeout) — done.`);
-            names = [];
-            break;
-          }
-
-          console.warn(`Page ${pageNum} attempt ${attempt} failed: ${err.message}`);
-
-          if (isCrash) {
-            await browser.close().catch(() => {});
-            browser = await launchBrowser();
-          }
-
-          if (attempt === MAX_RETRIES) {
-            console.error(`Page ${pageNum}: giving up after ${MAX_RETRIES} attempts.`);
-            names = [];
-          }
-        }
-      }
-
-      if (names.length === 0) {
-        console.log(`Page ${pageNum}: empty — done.`);
-        break;
-      }
-
-      names.forEach((n) => games.add(n));
-      console.log(`Page ${pageNum}: ${names.length} games`);
+    for (const section of SECTIONS) {
+      const games = await scrapeSection(browser, section);
+      games.forEach((g) => all.add(g));
+      console.log(`[${section.name}] total: ${games.size}`);
     }
   } finally {
     await browser.close().catch(() => {});
   }
 
-  return [...games].sort();
+  return [...all].sort();
 }
 
 module.exports = { scrapeGames };
