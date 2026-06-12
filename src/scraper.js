@@ -48,8 +48,9 @@ async function openPage(browser) {
 async function fetchPage(browser, url) {
   const page = await openPage(browser);
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 0 });
-    // 30s to find .name — timeout means page doesn't exist
+    // 90s nav timeout — if domcontentloaded never fires the server is hung
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+    // 30s to find .name — timeout means page has no products (end of pagination)
     await page.waitForSelector('.name', { timeout: 30_000 });
     return await page.$$eval('.name', (els) =>
       els.map((el) => el.textContent.trim()).filter(Boolean)
@@ -73,10 +74,13 @@ async function scrapeSection(browser, section) {
         names = await fetchPage(browser, url);
         break;
       } catch (err) {
-        const isTimeout = err.name === 'TimeoutError' || err.message.includes('waiting for selector');
+        // Selector timeout = page loaded but no products = end of pagination → stop
+        const isSelectorTimeout = err.message.includes('waiting for selector');
+        // Nav timeout = server hung → retry, then give up
+        const isNavTimeout = err.name === 'TimeoutError' && !isSelectorTimeout;
         const isCrash = err.name === 'TargetCloseError' || err.message.includes('Target closed');
 
-        if (isTimeout) {
+        if (isSelectorTimeout) {
           console.log(`[${section.name}] Page ${pageNum}: no products — done.`);
           names = [];
           break;
@@ -90,7 +94,12 @@ async function scrapeSection(browser, section) {
         }
 
         if (attempt === MAX_RETRIES) {
-          console.error(`[${section.name}] Page ${pageNum}: giving up.`);
+          if (isNavTimeout) {
+            // Navigation kept timing out — treat as end of pagination
+            console.log(`[${section.name}] Page ${pageNum}: nav timeout after retries — done.`);
+          } else {
+            console.error(`[${section.name}] Page ${pageNum}: giving up.`);
+          }
           names = [];
         }
       }
