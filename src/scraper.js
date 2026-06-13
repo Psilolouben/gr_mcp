@@ -9,7 +9,11 @@ const MAX_RETRIES = 2;
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
-// Sections to scrape — add more entries here to extend coverage
+const BLOCKED_URLS = [
+  '*.png', '*.jpg', '*.jpeg', '*.gif', '*.svg', '*.webp',
+  '*.css', '*.woff', '*.woff2', '*.ttf', '*.eot',
+];
+
 const SECTIONS = [
   {
     name: 'Board Games',
@@ -34,34 +38,16 @@ async function launchBrowser() {
 async function openPage(browser) {
   const page = await browser.newPage();
   await page.setUserAgent(USER_AGENT);
-  await page.setRequestInterception(true);
-  page.on('request', (req) => {
-    if (['image', 'stylesheet', 'font', 'media', 'other'].includes(req.resourceType())) {
-      req.abort();
-    } else {
-      req.continue();
-    }
-  });
+  // Block images/fonts/styles via CDP — no per-request interception overhead
+  const client = await page.target().createCDPSession();
+  await client.send('Network.setBlockedURLs', { urls: BLOCKED_URLS });
   return page;
 }
 
-async function fetchPage(browser, url) {
-  const page = await openPage(browser);
-  try {
-    // 90s nav timeout — if domcontentloaded never fires the server is hung
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
-    // 30s to find .name — timeout means page has no products (end of pagination)
-    await page.waitForSelector('.name', { timeout: 30_000 });
-    return await page.$$eval('.name', (els) =>
-      els.map((el) => el.textContent.trim()).filter(Boolean)
-    );
-  } finally {
-    await page.close().catch(() => {});
-  }
-}
-
+// One page per section, reused across all page navigations (mirrors local Ruby script)
 async function scrapeSection(browser, section) {
   const games = new Set();
+  let page = await openPage(browser);
 
   for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
     const url = section.buildUrl(pageNum);
@@ -71,12 +57,14 @@ async function scrapeSection(browser, section) {
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        names = await fetchPage(browser, url);
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 90_000 });
+        await page.waitForSelector('.name', { timeout: 30_000 });
+        names = await page.$$eval('.name', (els) =>
+          els.map((el) => el.textContent.trim()).filter(Boolean)
+        );
         break;
       } catch (err) {
-        // Selector timeout = page loaded but no products = end of pagination → stop
         const isSelectorTimeout = err.message.includes('waiting for selector');
-        // Nav timeout = server hung → retry, then give up
         const isNavTimeout = err.name === 'TimeoutError' && !isSelectorTimeout;
         const isCrash = err.name === 'TargetCloseError' || err.message.includes('Target closed');
 
@@ -89,13 +77,14 @@ async function scrapeSection(browser, section) {
         console.warn(`[${section.name}] Page ${pageNum} attempt ${attempt} failed: ${err.message}`);
 
         if (isCrash) {
+          await page.close().catch(() => {});
           await browser.close().catch(() => {});
           browser = await launchBrowser();
+          page = await openPage(browser);
         }
 
         if (attempt === MAX_RETRIES) {
           if (isNavTimeout) {
-            // Navigation kept timing out — treat as end of pagination
             console.log(`[${section.name}] Page ${pageNum}: nav timeout after retries — done.`);
           } else {
             console.error(`[${section.name}] Page ${pageNum}: giving up.`);
@@ -111,7 +100,8 @@ async function scrapeSection(browser, section) {
     console.log(`[${section.name}] Page ${pageNum}: ${names.length} games`);
   }
 
-  return games;
+  await page.close().catch(() => {});
+  return { games, browser };
 }
 
 async function scrapeGames() {
@@ -120,9 +110,10 @@ async function scrapeGames() {
 
   try {
     for (const section of SECTIONS) {
-      const games = await scrapeSection(browser, section);
-      games.forEach((g) => all.add(g));
-      console.log(`[${section.name}] total: ${games.size}`);
+      const result = await scrapeSection(browser, section);
+      browser = result.browser; // track any relaunched browser
+      result.games.forEach((g) => all.add(g));
+      console.log(`[${section.name}] total: ${result.games.size}`);
     }
   } finally {
     await browser.close().catch(() => {});
