@@ -31,7 +31,21 @@ async function launchBrowser() {
     executablePath: EXECUTABLE_PATH,
     headless: true,
     protocolTimeout: 600_000,
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'],
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-default-apps',
+      '--disable-sync',
+      '--disable-translate',
+      '--hide-scrollbars',
+      '--mute-audio',
+      '--no-first-run',
+      '--safebrowsing-disable-auto-update',
+    ],
   });
 }
 
@@ -39,9 +53,20 @@ async function openPage(browser) {
   const page = await browser.newPage();
   await page.setUserAgent(USER_AGENT);
   // Block images/fonts/styles via CDP — no per-request interception overhead
-  const client = await page.target().createCDPSession();
+  const client = await page.createCDPSession();
   await client.send('Network.setBlockedURLs', { urls: BLOCKED_URLS });
   return page;
+}
+
+function isCrashError(err) {
+  return (
+    err.name === 'TargetCloseError' ||
+    err.message.includes('Target closed') ||
+    err.message.includes('Session with given id not found') ||
+    err.message.includes('Session closed') ||
+    err.message.includes('Connection closed') ||
+    err.message.includes('Protocol error')
+  );
 }
 
 // One page per section, reused across all page navigations (mirrors local Ruby script)
@@ -66,7 +91,7 @@ async function scrapeSection(browser, section) {
       } catch (err) {
         const isSelectorTimeout = err.message.includes('waiting for selector');
         const isNavTimeout = err.name === 'TimeoutError' && !isSelectorTimeout;
-        const isCrash = err.name === 'TargetCloseError' || err.message.includes('Target closed');
+        const isCrash = isCrashError(err);
 
         if (isSelectorTimeout) {
           console.log(`[${section.name}] Page ${pageNum}: no products — done.`);
