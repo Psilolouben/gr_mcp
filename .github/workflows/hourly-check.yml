@@ -1,0 +1,36 @@
+name: Hourly game check
+
+on:
+  schedule:
+    - cron: '0 * * * *'   # every hour on the hour
+  workflow_dispatch:        # also allows manual trigger from GitHub UI
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Run game check
+        env:
+          UPSTASH_REDIS_REST_URL:   ${{ secrets.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
+          TELEGRAM_BOT_TOKEN:       ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:         ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: node -e "
+          const { checkGameChanges } = require('./src/checker');
+          const { pushTelegramUpdate } = require('./src/telegram-push');
+          checkGameChanges()
+            .then(r => pushTelegramUpdate(r))
+            .then(() => process.exit(0))
+            .catch(e => { console.error(e); process.exit(1); });
+        "
