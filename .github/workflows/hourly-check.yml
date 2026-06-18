@@ -20,6 +20,12 @@ jobs:
 
       - run: npm ci
 
+      - name: Debug env
+        run: |
+          echo "URL set: ${{ vars.UPSTASH_REDIS_REST_URL != '' }}"
+          echo "TOKEN set: ${{ vars.UPSTASH_REDIS_REST_TOKEN != '' }}"
+          echo "URL value: ${{ vars.UPSTASH_REDIS_REST_URL }}"
+
       - name: Run game check
         env:
           UPSTASH_REDIS_REST_URL:   ${{ vars.UPSTASH_REDIS_REST_URL }}
