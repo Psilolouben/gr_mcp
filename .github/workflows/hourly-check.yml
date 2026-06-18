@@ -9,8 +9,6 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    environment: default
-
     steps:
       - uses: actions/checkout@v4
 
@@ -23,8 +21,8 @@ jobs:
 
       - name: Run game check
         env:
-          UPSTASH_REDIS_REST_URL:   ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-          TELEGRAM_BOT_TOKEN:       ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID:         ${{ secrets.TELEGRAM_CHAT_ID }}
+          UPSTASH_REDIS_REST_URL:   ${{ vars.UPSTASH_REDIS_REST_URL }}
+          UPSTASH_REDIS_REST_TOKEN: ${{ vars.UPSTASH_REDIS_REST_TOKEN }}
+          TELEGRAM_BOT_TOKEN:       ${{ vars.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID:         ${{ vars.TELEGRAM_CHAT_ID }}
         run: node src/run-check.js
