@@ -12,7 +12,7 @@ const USER_AGENT =
 const SECTIONS = [
   {
     name: 'Board Games',
-    buildUrl: (page) => `https://thegamerules.com/epitrapezia-paixnidia?fq=1&page=${page}`,
+    buildUrl: (page) => `https://thegamerules.com/epitrapezia-paixnidia?page=${page}`,
   },
   {
     name: 'New Arrivals',
