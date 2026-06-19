@@ -106,6 +106,7 @@ async function startTelegramBot(webhookBaseUrl) {
       // Strip common question words and search what's left
       const query = text
         .replace(/is\s+|do you have\s+|in stock.*|available.*|find\s+|search\s+/g, '')
+        .replace(/["""'']/g, '')
         .trim();
       try {
         const stored = await getStoredGames();
