@@ -60,6 +60,29 @@ async function startTelegramBot(webhookBaseUrl) {
     }
   });
 
+  // /find <title> — check if a specific game is in stock
+  bot.onText(/\/find (.+)/, async (msg, match) => {
+    const chatId = msg.chat.id;
+    const query = match[1].trim();
+    try {
+      const stored = await getStoredGames();
+      const results = stored.filter((g) =>
+        g.toLowerCase().includes(query.toLowerCase())
+      );
+      if (results.length > 0) {
+        await bot.sendMessage(
+          chatId,
+          `✅ Found ${results.length} match(es) for "*${query}*":\n\n${results.map((g) => `  • ${g}`).join('\n')}`,
+          { parse_mode: 'Markdown' }
+        );
+      } else {
+        await bot.sendMessage(chatId, `❌ No games matching "*${query}*" found in current inventory.`, { parse_mode: 'Markdown' });
+      }
+    } catch (err) {
+      await bot.sendMessage(chatId, `❌ Error: ${err.message}`);
+    }
+  });
+
   // Natural language fallback — any plain message gets routed by keyword
   bot.on('message', async (msg) => {
     if (msg.text && msg.text.startsWith('/')) return; // already handled above
@@ -78,8 +101,29 @@ async function startTelegramBot(webhookBaseUrl) {
       } catch (err) {
         await bot.sendMessage(chatId, `❌ Error: ${err.message}`);
       }
+    } else if (/is .+ available|do you have|in stock|find|search/.test(text)) {
+      // Looks like an availability question — extract the likely title
+      // Strip common question words and search what's left
+      const query = text
+        .replace(/is\s+|do you have\s+|in stock.*|available.*|find\s+|search\s+/g, '')
+        .trim();
+      try {
+        const stored = await getStoredGames();
+        const results = stored.filter((g) => g.toLowerCase().includes(query));
+        if (results.length > 0) {
+          await bot.sendMessage(
+            chatId,
+            `✅ Found ${results.length} match(es) for "*${query}*":\n\n${results.map((g) => `  • ${g}`).join('\n')}`,
+            { parse_mode: 'Markdown' }
+          );
+        } else {
+          await bot.sendMessage(chatId, `❌ No games matching "*${query}*" found in current inventory.`, { parse_mode: 'Markdown' });
+        }
+      } catch (err) {
+        await bot.sendMessage(chatId, `❌ Error: ${err.message}`);
+      }
     } else {
-      // Default: anything else triggers a check
+      // Default: trigger a full scan
       await bot.sendMessage(chatId, '🔍 Scraping thegamerules.com… this takes ~1 min.');
       try {
         const result = await checkGameChanges();
