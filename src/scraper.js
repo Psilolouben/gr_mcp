@@ -58,7 +58,11 @@ async function scrapeSection(section) {
     const $ = load(html);
     const names = [];
     $('.name').each((_, el) => {
-      const t = $(el).text().trim();
+      const $el = $(el);
+      // Walk up to the product card and skip if it has an out-of-stock label
+      const $card = $el.parent().parent();
+      if ($card.find('.c--stock-label').length > 0) return;
+      const t = $el.text().trim();
       if (t) names.push(t);
     });
 
