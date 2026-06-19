@@ -12,7 +12,7 @@ const USER_AGENT =
 const SECTIONS = [
   {
     name: 'Board Games',
-    buildUrl: (page) => `https://thegamerules.com/epitrapezia-paixnidia?page=${page}`,
+    buildUrl: (page) => `https://thegamerules.com/epitrapezia-paixnidia?fq=1&page=${page}`,
   },
   {
     name: 'New Arrivals',
@@ -56,20 +56,10 @@ async function scrapeSection(section) {
     }
 
     const $ = load(html);
-
-    // Build set of out-of-stock names by approaching from the label side
-    const outOfStock = new Set();
-    $('.c--stock-label').each((_, label) => {
-      const name = $(label).siblings('.name').text().trim() ||
-                   $(label).parent().siblings('.name').text().trim() ||
-                   $(label).parent().find('.name').text().trim();
-      if (name) outOfStock.add(name);
-    });
-
     const names = [];
     $('.name').each((_, el) => {
       const t = $(el).text().trim();
-      if (t && !outOfStock.has(t)) names.push(t);
+      if (t) names.push(t);
     });
 
     if (names.length === 0) {
