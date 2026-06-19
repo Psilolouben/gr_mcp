@@ -51,6 +51,24 @@ app.use(express.json());
 // Health check for Render
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
+// Cron trigger — called by cron-job.org every hour
+// Protected by a simple token to prevent unauthorized triggers
+app.get('/trigger', async (req, res) => {
+  const token = process.env.CRON_SECRET;
+  if (token && req.query.secret !== token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  res.json({ status: 'triggered' }); // respond immediately so cron-job.org doesn't time out
+  try {
+    const result = await checkGameChanges();
+    await pushTelegramUpdate(result).catch((err) =>
+      console.error('Telegram push error:', err)
+    );
+  } catch (err) {
+    console.error('Trigger error:', err);
+  }
+});
+
 // Telegram webhook — Telegram POSTs updates here
 app.post('/telegram/webhook', (req, res) => {
   res.sendStatus(200); // ack immediately
