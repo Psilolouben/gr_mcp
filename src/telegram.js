@@ -1,9 +1,36 @@
 'use strict';
 
+const { load } = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
 const { checkGameChanges } = require('./checker');
 const { getStoredGames } = require('./storage');
 const { pushTelegramUpdate, formatResult } = require('./telegram-push');
+
+const USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+
+/**
+ * Live search on thegamerules.com for a specific title.
+ * Used as fallback when the Redis snapshot returns no results.
+ * Returns array of matching product names, or null on error.
+ */
+async function liveSearch(query) {
+  const url = `https://thegamerules.com/index.php?route=product/search&search=${encodeURIComponent(query)}&description=true`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': USER_AGENT },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const html = await res.text();
+  const $ = load(html);
+  const names = [];
+  $('.name').each((_, el) => {
+    const t = $(el).text().trim();
+    if (t) names.push(t);
+  });
+  // Filter to results that actually match the query (search can return broad results)
+  return names.filter((n) => n.toLowerCase().includes(query.toLowerCase()));
+}
 
 let bot;
 
@@ -66,9 +93,7 @@ async function startTelegramBot(webhookBaseUrl) {
     const query = match[1].trim();
     try {
       const stored = await getStoredGames();
-      const results = stored.filter((g) =>
-        g.toLowerCase().includes(query.toLowerCase())
-      );
+      const results = stored.filter((g) => g.toLowerCase().includes(query.toLowerCase()));
       if (results.length > 0) {
         await bot.sendMessage(
           chatId,
@@ -76,7 +101,18 @@ async function startTelegramBot(webhookBaseUrl) {
           { parse_mode: 'Markdown' }
         );
       } else {
-        await bot.sendMessage(chatId, `❌ No games matching "*${query}*" found in current inventory.`, { parse_mode: 'Markdown' });
+        // Not in snapshot — try a live search (catches uncategorized products like Revive)
+        await bot.sendMessage(chatId, `🔎 Not in snapshot, doing live search for "*${query}*"…`, { parse_mode: 'Markdown' });
+        const live = await liveSearch(query);
+        if (live.length > 0) {
+          await bot.sendMessage(
+            chatId,
+            `✅ Found on site (not yet in snapshot):\n\n${live.map((g) => `  • ${g}`).join('\n')}`,
+            { parse_mode: 'Markdown' }
+          );
+        } else {
+          await bot.sendMessage(chatId, `❌ "*${query}*" not found anywhere on thegamerules.com.`, { parse_mode: 'Markdown' });
+        }
       }
     } catch (err) {
       await bot.sendMessage(chatId, `❌ Error: ${err.message}`);
@@ -118,7 +154,17 @@ async function startTelegramBot(webhookBaseUrl) {
             { parse_mode: 'Markdown' }
           );
         } else {
-          await bot.sendMessage(chatId, `❌ No games matching "*${query}*" found in current inventory.`, { parse_mode: 'Markdown' });
+          // Fallback: live search
+          const live = await liveSearch(query);
+          if (live.length > 0) {
+            await bot.sendMessage(
+              chatId,
+              `✅ Found on site (not yet in snapshot):\n\n${live.map((g) => `  • ${g}`).join('\n')}`,
+              { parse_mode: 'Markdown' }
+            );
+          } else {
+            await bot.sendMessage(chatId, `❌ "*${query}*" not found anywhere on thegamerules.com.`, { parse_mode: 'Markdown' });
+          }
         }
       } catch (err) {
         await bot.sendMessage(chatId, `❌ Error: ${err.message}`);
