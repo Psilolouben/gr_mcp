@@ -56,14 +56,20 @@ async function scrapeSection(section) {
     }
 
     const $ = load(html);
+
+    // Build set of out-of-stock names by approaching from the label side
+    const outOfStock = new Set();
+    $('.c--stock-label').each((_, label) => {
+      const name = $(label).siblings('.name').text().trim() ||
+                   $(label).parent().siblings('.name').text().trim() ||
+                   $(label).parent().find('.name').text().trim();
+      if (name) outOfStock.add(name);
+    });
+
     const names = [];
     $('.name').each((_, el) => {
-      const $el = $(el);
-      // Walk up to the product card and skip if it has an out-of-stock label
-      const $card = $el.parent().parent();
-      if ($card.find('.c--stock-label').length > 0) return;
-      const t = $el.text().trim();
-      if (t) names.push(t);
+      const t = $(el).text().trim();
+      if (t && !outOfStock.has(t)) names.push(t);
     });
 
     if (names.length === 0) {
