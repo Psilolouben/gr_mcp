@@ -4,6 +4,7 @@ const express = require('express');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { checkGameChanges } = require('./checker');
+const { getStoredGames } = require('./storage');
 const { startTelegramBot, pushTelegramUpdate, handleUpdate } = require('./telegram');
 
 // ── MCP Server setup ──────────────────────────────────────────────────────────
@@ -40,6 +41,32 @@ mcpServer.tool(
       .join('\n\n');
 
     return { content: [{ type: 'text', text: summary }] };
+  }
+);
+
+mcpServer.tool(
+  'get_available_games',
+  'Return the full list of currently available board games from the last stored snapshot (updated hourly). Fast — reads from Redis, no scraping. Optionally filter by a search term.',
+  {
+    search: {
+      type: 'string',
+      description: 'Optional title filter — returns only games whose name contains this string (case-insensitive).',
+      optional: true,
+    },
+  },
+  async ({ search }) => {
+    const games = await getStoredGames();
+    const filtered = search
+      ? games.filter((g) => g.toLowerCase().includes(search.toLowerCase()))
+      : games;
+
+    const header = search
+      ? `${filtered.length} game(s) matching "${search}" (snapshot may be up to 1 hour old):`
+      : `${filtered.length} games currently available (snapshot may be up to 1 hour old):`;
+
+    return {
+      content: [{ type: 'text', text: `${header}\n\n${filtered.join('\n')}` }],
+    };
   }
 );
 
