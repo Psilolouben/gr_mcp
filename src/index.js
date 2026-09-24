@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { z } = require('zod');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { checkGameChanges } = require('./checker');
@@ -47,13 +48,7 @@ mcpServer.tool(
 mcpServer.tool(
   'get_available_games',
   'Return the full list of currently available board games from the last stored snapshot (updated hourly). Fast — reads from Redis, no scraping. Optionally filter by a search term.',
-  {
-    search: {
-      type: 'string',
-      description: 'Optional title filter — returns only games whose name contains this string (case-insensitive).',
-      optional: true,
-    },
-  },
+  { search: z.string().optional().describe('Optional title filter — returns only games whose name contains this string (case-insensitive).') },
   async ({ search }) => {
     const games = await getStoredGames();
     const filtered = search
